@@ -19,16 +19,16 @@ using namespace FullDTW;
 #define FLOAT2HALF(a) __float2half2_rn(a)
 #define HALF2FLOAT(a) __half2float(a)
 typedef __half2 value_ht;
-#define FP_PIPES 2
+#define FP_PIPES      2
 #else
-#define FP_PIPES 1
+#define FP_PIPES      1
 #define FLOAT2HALF(a) a
 #define HALF2FLOAT(a) a
 typedef float value_ht;
 #endif
 
-//------------------------------------------------------------time
-// macros-----------------------------------------------------//
+// Timer macros
+//
 #define TIMERSTART_CUDA(label)                                                 \
   cudaSetDevice(0);                                                            \
   cudaEvent_t start##label, stop##label;                                       \
@@ -46,11 +46,15 @@ typedef float value_ht;
             << ((QUERY_LEN / (time##label * 1e6)) * (REF_LEN)*NUM_READS *      \
                 FP_PIPES)                                                      \
             << " GCUPS (" << #label << ")" << std::endl;
-//..........................................................other
-// macros.......................................................//
+
+// Other macros
+//
 #define ASSERT(ans)                                                            \
   { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line,
+
+inline void gpuAssert(cudaError_t code,
+                      const char *file,
+                      int line,
                       bool abort = true) {
   if (code != cudaSuccess) {
     fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
@@ -59,66 +63,63 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
       exit(code);
   }
 }
-//---------------------------------------------------------global
-// vars----------------------------------------------------------//
+
+// Global vars
+//
 cudaStream_t stream_var[STREAM_NUM];
 
+///////////////////////////////////////////////////////////////////////////////
+// main
+//
 int main(int argc, char *argv[]) {
-
-  /* count total cell updates */
+  // Count total cell updates
+  //
   std::cout << "We are going to process "
             << (NUM_READS / 1000000000.0) * QUERY_LEN * REF_LEN
             << " Giga Cell Updates (GCU)" << std::endl;
 
-  // create host storage and buffers on devices
-  value_ht *host_query,          // time series on CPU
-      *host_dist,                // distance results on CPU
-      *host_ref,                 // re-arranged ref  time series on CPU
-      *device_query[STREAM_NUM], // time series on GPU
-      *device_dist[STREAM_NUM],  // distance results on GPU
-      *device_ref;
-  raw_t *squiggle_data; // random data generated is stored here.
+  // Create host storage and buffers on devices
+  //
+  value_ht *host_query,               // time series on CPU
+           *host_dist,                // distance results on CPU
+           *host_ref,                 // re-arranged ref  time series on CPU
+           *device_query[STREAM_NUM], // time series on GPU
+           *device_dist[STREAM_NUM],  // distance results on GPU
+           *device_ref;
+  raw_t    *squiggle_data;            // random data generated is stored here.
 
-  //-------------------------------------------------------mem
-  // allocation----------------------------------------------------------//
   TIMERSTART(malloc)
 
-  //--------------------------------------------------------host mem
-  // allocation--------------------------------------------------//
-  ASSERT(cudaMallocHost(&host_query,
-                        sizeof(value_ht) * NUM_READS * QUERY_LEN)); /* input */
-  ASSERT(cudaMallocHost(&host_ref, sizeof(value_ht) * REF_LEN));    /* input */
-  ASSERT(cudaMallocHost(&squiggle_data,
-                        sizeof(raw_t) * NUM_READS * QUERY_LEN)); /* input */
+  // Host memory allocation
+  //
+  ASSERT(cudaMallocHost(&host_query,    sizeof(value_ht) * NUM_READS * QUERY_LEN)); /* input */
+  ASSERT(cudaMallocHost(&host_ref,      sizeof(value_ht) * REF_LEN));               /* input */
+  ASSERT(cudaMallocHost(&squiggle_data, sizeof(raw_t)    * NUM_READS * QUERY_LEN)); /* input */
+  ASSERT(cudaMallocHost(&host_dist,     sizeof(value_ht) * NUM_READS));             /* results */
 
-  ASSERT(
-      cudaMallocHost(&host_dist, sizeof(value_ht) * NUM_READS)); /* results */
-
-  //-------------------------------------------------------------dev mem
-  // allocation-------------------------------------------------//
+  // Device memory allocation
+  //
   ASSERT(cudaMalloc(&device_ref, sizeof(value_ht) * REF_LEN));
   for (int stream_id = 0; stream_id < STREAM_NUM; stream_id++) {
-    ASSERT(cudaMalloc(&device_query[stream_id],
-                      (sizeof(value_ht) * BLOCK_NUM * QUERY_LEN)));
-    ASSERT(cudaMalloc(&device_dist[stream_id], sizeof(value_ht) * BLOCK_NUM));
+    ASSERT(cudaMalloc(&device_query[stream_id], sizeof(value_ht) * BLOCK_NUM * QUERY_LEN));
+    ASSERT(cudaMalloc(&device_dist[stream_id],  sizeof(value_ht) * BLOCK_NUM));
     ASSERT(cudaStreamCreate(&stream_var[stream_id]));
   }
 
   TIMERSTOP(malloc)
 
-  //-----------------------------------------------------------squiggle data
-  // generation, type conversion, d2h copy target reference and clear some of
-  // host mem--------------------------------------//
+  // Squiggle data generation, type conversion, d2h copy target reference and
+  // clear some of host mem
+  // 
   TIMERSTART(generate_data)
   generate_cbf(squiggle_data, QUERY_LEN, NUM_READS);
 #pragma unroll
-  for (uint64_t i = 0; i < (uint64_t)((int64_t)QUERY_LEN * (int64_t)NUM_READS);
-       i++) {
+  for (uint64_t i = 0; i < (uint64_t)((int64_t)QUERY_LEN * (int64_t)NUM_READS); i++) {
     host_query[i] = FLOAT2HALF(squiggle_data[i]);
   }
 
-  //----------re-arranging target reference for memory
-  // coalescing-----------------//
+  // Rearranging target reference for memory coalescing
+  //
   uint64_t k = 0;
   for (uint64_t i = 0; i < SEGMENT_SIZE; i++) {
 
@@ -133,30 +134,35 @@ int main(int argc, char *argv[]) {
   cudaFreeHost(squiggle_data);
   TIMERSTOP(generate_data)
 
-  /*-------------------------------------------------------------- performs
-   * memory I/O and  pairwise DTW
-   * computation----------------------------------------- */
+  // Performs memory I/O and  pairwise DTW computation
+  //
   TIMERSTART_CUDA(concurrent_kernel_launch)
-  //-------------total batches of concurrent workload to & fro
-  // device---------------//
+  
+  // Total batches of concurrent workload to & from device
+  //
   int batch_count = NUM_READS / (BLOCK_NUM * STREAM_NUM);
 
   for (int batch_id = 0; batch_id < batch_count; batch_id++) {
     for (int stream_id = 0; stream_id < STREAM_NUM; stream_id++) {
-      //----h2d copy-------------//
-      ASSERT(cudaMemcpyAsync(
-          device_query[stream_id],
-          &host_query[(batch_id * STREAM_NUM * QUERY_LEN * BLOCK_NUM) +
-                      (stream_id * QUERY_LEN * BLOCK_NUM)],
-          sizeof(value_ht) * QUERY_LEN * BLOCK_NUM, cudaMemcpyHostToDevice,
-          stream_var[stream_id]));
+      // Host to device copy
+      //
+      ASSERT(cudaMemcpyAsync(device_query[stream_id],
+                             &host_query[(batch_id * STREAM_NUM * QUERY_LEN * BLOCK_NUM) +
+                                         (stream_id * QUERY_LEN * BLOCK_NUM)],
+                             sizeof(value_ht) * QUERY_LEN * BLOCK_NUM, cudaMemcpyHostToDevice,
+                             stream_var[stream_id]));
 
-      //---------launch kernels------------//
-      distances<value_ht, index_t>(device_ref, device_query[stream_id],
-                                   device_dist[stream_id], BLOCK_NUM,
-                                   FLOAT2HALF(0), stream_var[stream_id]);
+      // Launch kernels
+      //
+      distances<value_ht, index_t>(device_ref,
+                                   device_query[stream_id],
+                                   device_dist[stream_id],
+                                   BLOCK_NUM,
+                                   FLOAT2HALF(0),
+                                   stream_var[stream_id]);
 
-      //-----d2h copy--------------//
+      // Device to host copy
+      //
       ASSERT(cudaMemcpyAsync(&host_dist[(batch_id * STREAM_NUM * BLOCK_NUM) +
                                         (stream_id * BLOCK_NUM)],
                              device_dist[stream_id],
@@ -167,8 +173,8 @@ int main(int argc, char *argv[]) {
   ASSERT(cudaDeviceSynchronize());
   TIMERSTOP_CUDA(concurrent_kernel_launch)
 
-  /* -----------------------------------------------------------------print
-   * output -----------------------------------------------------*/
+  // Print output
+  //
 #ifdef NV_DEBUG
 #ifndef FP16
   for (idxt j = 0; j < NUM_READS; j++) {
@@ -187,8 +193,8 @@ int main(int argc, char *argv[]) {
   std::cout << std::endl;
 #endif
 
-  /* -----------------------------------------------------------------free
-   * memory -----------------------------------------------------*/
+  // Free memory
+  //
   TIMERSTART(free)
   for (int stream_id = 0; stream_id < STREAM_NUM; stream_id++) {
     cudaFree(device_dist[stream_id]);
