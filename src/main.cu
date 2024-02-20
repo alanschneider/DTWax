@@ -168,8 +168,8 @@ int main(int argc, char **argv) {
   // Total batches of concurrent workload to & from device
   //
   idxt batch_count = NUM_READS / (BLOCK_NUM * STREAM_NUM);
-  std::cout << "Batch count: " << batch_count << " num_reads:" << NUM_READS
-            << "\n";
+  std::cout << "Batch count: " << batch_count << " num_reads:" << NUM_READS << "\n";
+
   TIMERSTART_CUDA(concurrent_DTW_kernel_launch)
   for (idxt batch_id = 0; batch_id <= batch_count; batch_id += 1) {
     std::cout << "Processing batch_id: " << batch_id << "\n";
@@ -195,12 +195,13 @@ int main(int argc, char **argv) {
       if ((rds_in_batch - BLOCK_NUM) < 0) {
         rds_in_stream = rds_in_batch;
         rds_in_batch = 0;
-      } else {
+      }
+      else {
         rds_in_batch -= BLOCK_NUM;
         rds_in_stream = BLOCK_NUM;
       }
-      std::cout << "Issuing " << rds_in_stream
-                << " reads (blocks) from base addr:"
+
+      std::cout << "Issuing " << rds_in_stream << " reads (blocks) from base addr:"
                 << (batch_id * STREAM_NUM * BLOCK_NUM * QUERY_LEN) + ((stream_id - 1) * BLOCK_NUM * QUERY_LEN)
                 << " to stream_id " << (stream_id - 1) << "\n";
 
@@ -232,21 +233,18 @@ int main(int argc, char **argv) {
   ASSERT(cudaDeviceSynchronize());
   TIMERSTOP_CUDA(concurrent_DTW_kernel_launch, NUM_READS)
 
-  std::cout << "Read_ID\t"
-            << "QUERY_LEN\t"
-            << "REF_LEN\t";
+  std::cout << "Read_ID\t" << "QUERY_LEN\t" << "REF_LEN\t";
 #ifndef FP16
   std::cout << "sDTW-score\n";
   for (index_t j = 0; j < NUM_READS; j++) {
-    std::cout << j << "\t" << read_ids[j] << "\t" << QUERY_LEN << "\t"
-              << REF_LEN << "\t" << HALF2FLOAT(host_dist[j]) << "\n";
+    std::cout << j << "\t" << read_ids[j] << "\t" << QUERY_LEN << "\t" << REF_LEN << "\t" 
+              << HALF2FLOAT(host_dist[j]) << "\n";
   }
 #else
   std::cout << "sDTW score: fwd-strand\tsDTW score: rev-strand\n";
   for (index_t j = 0; j < NUM_READS; j++) {
-    std::cout << j << "\t" << read_ids[j] << "\t" << QUERY_LEN << "\t"
-              << REF_LEN << "\t" << HALF2FLOAT(host_dist[j].x) << "\t"
-              << HALF2FLOAT(host_dist[j].y) << "\n";
+    std::cout << j << "\t" << read_ids[j] << "\t" << QUERY_LEN << "\t" << REF_LEN << "\t" 
+              << HALF2FLOAT(host_dist[j].x) << "\t" << HALF2FLOAT(host_dist[j].y) << "\n";
   }
 
 #endif

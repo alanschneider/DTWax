@@ -179,9 +179,15 @@ __global__ void DTW(reference_coefficients* ref,
 
       if (((wave - PREFIX_LEN) <= thread_id) &&
           (thread_id <= (wave - 1))) // HS: block cells that have completed from further
-        compute_segment<idx_t, val_t>(wave, thread_id, query_val, ref_coeff1,
-                                      penalty_left, penalty_here, penalty_diag,
-                                      penalty_temp, query_batch);
+        compute_segment<idx_t, val_t>(wave,
+                                      thread_id,
+                                      query_val,
+                                      ref_coeff1,
+                                      penalty_left,
+                                      penalty_here,
+                                      penalty_diag,
+                                      penalty_temp,
+                                      query_batch);
 
       /* new_query_val buffer is empty, reload */
       if ((wave & (WARP_SIZE_MINUS_ONE)) == 0) {
