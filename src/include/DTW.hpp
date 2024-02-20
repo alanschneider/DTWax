@@ -14,253 +14,6 @@ All rights reserved.
  * disclosure or distribution of this material and related documentation
  * without an express license agreement from NVIDIA CORPORATION or
  * its affiliates is strictly prohibited.
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
  # SPDX-FileCopyrightText: Copyright (c) <year> NVIDIA CORPORATION & AFFILIATES.
 All rights reserved. # SPDX-License-Identifier: LicenseRef-NvidiaProprietary
@@ -284,12 +37,20 @@ namespace FullDTW {
 
 template <typename val_t, typename idx_t>
 
-__host__ void distances(reference_coefficients *ref, val_t *query, val_t *dists,
-                        idx_t num_entries, val_t thresh, cudaStream_t stream,
-                        val_t *device_last_row) {
-
-  DTW<idx_t, val_t><<<num_entries, WARP_SIZE, 0, stream>>>(
-      ref, query, dists, num_entries, thresh, device_last_row);
+__host__ void distances(reference_coefficients *ref,
+                        val_t                  *query,
+                        val_t                  *dists,
+                        idx_t                  num_entries,
+                        val_t                  thresh,
+                        cudaStream_t           stream,
+                        val_t                  *device_last_row)
+{
+  DTW<idx_t, val_t><<<num_entries, WARP_SIZE, 0, stream>>>(ref,
+                                                           query,
+                                                           dists,
+                                                           num_entries,
+                                                           thresh,
+                                                           device_last_row);
 
   return;
 }
